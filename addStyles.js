@@ -13,70 +13,99 @@ var stylesInDom = {},
 	isOldIE = memoize(function() {
 		return /msie [6-9]\b/.test(self.navigator.userAgent.toLowerCase());
 	}),
-	getHeadElement = memoize(function () {
-		return document.head || document.getElementsByTagName("head")[0];
-	}),
+	getHeadElement = function (doc) {
+		return doc.head || doc.getElementsByTagName("head")[0];
+	},
 	singletonElement = null,
 	singletonCounter = 0,
 	styleElementsInsertedAtTop = [];
 
-module.exports = function(list, options) {
+module.exports = function(list) {
 	if(typeof DEBUG !== "undefined" && DEBUG) {
 		if(typeof document !== "object") throw new Error("The style-loader cannot be used in a non-browser environment");
 	}
 
-	options = options || {};
-	// Force single-tag solution on IE6-9, which has a hard limit on the # of <style>
-	// tags it will allow on a page
-	if (typeof options.singleton === "undefined") options.singleton = isOldIE();
+	return function load(options) {
+		options = options || {};
+		var doc = options.doc = options.doc || document;
+		// Force single-tag solution on IE6-9, which has a hard limit on the # of <style>
+		// tags it will allow on a page
+		if (typeof options.singleton === "undefined") options.singleton = isOldIE();
 
-	// By default, add <style> tags to the bottom of <head>.
-	if (typeof options.insertAt === "undefined") options.insertAt = "bottom";
+		// By default, add <style> tags to the bottom of <head>.
+		if (typeof options.insertAt === "undefined") options.insertAt = "bottom";
 
-	var styles = listToStyles(list);
-	addStylesToDom(styles, options);
+		var styles = listToStyles(list);
+		addStylesToDom(styles, options);
 
-	return function update(newList) {
-		var mayRemove = [];
-		for(var i = 0; i < styles.length; i++) {
-			var item = styles[i];
-			var domStyle = stylesInDom[item.id];
-			domStyle.refs--;
-			mayRemove.push(domStyle);
-		}
-		if(newList) {
-			var newStyles = listToStyles(newList);
-			addStylesToDom(newStyles, options);
-		}
-		for(var i = 0; i < mayRemove.length; i++) {
-			var domStyle = mayRemove[i];
-			if(domStyle.refs === 0) {
-				for(var j = 0; j < domStyle.parts.length; j++)
-					domStyle.parts[j]();
-				delete stylesInDom[domStyle.id];
+		return function update(newList) {
+			var mayRemove = [];
+			for(var i = 0; i < styles.length; i++) {
+				var item = styles[i];
+				var domStyle = stylesInDom[item.id];
+				if(!domStyle) continue;
+
+				for(var j = 0; j < domStyle.parts.length; j++) {
+					// NOTE: Only one part will be referenced by the same document.
+					var loader = domStyle.parts[j].find(function(loader) {
+						return loader.doc === doc;
+					});
+					if (loader && loader.refs > 0) {
+						loader.refs--;
+					}
+				}
+				mayRemove.push(domStyle);
 			}
-		}
-	};
-}
+			if(newList) {
+				var newStyles = listToStyles(newList);
+				addStylesToDom(newStyles, options);
+			}
+			for(var i = 0; i < mayRemove.length; i++) {
+				var domStyle = mayRemove[i];
+				var partLoaderCount = 0;
+				for(var j = 0; j < domStyle.parts.length; j++) {
+					// Unref loader from tail to head.
+					domStyle.parts[j].reverse().forEach(function(loader, index, loaders) {
+						if(loader.refs !== 0) return;
+						loader.update();
+						domStyle.parts[j].splice(loaders.length - 1 - index, 1);
+					});
+					partLoaderCount += domStyle.parts[j].length;
+				}
+				if(partLoaderCount === 0) {
+					delete stylesInDom[domStyle.id];
+				}
+			}
+		};
+	}
+};
 
 function addStylesToDom(styles, options) {
 	for(var i = 0; i < styles.length; i++) {
+		var doc = options.doc;
 		var item = styles[i];
 		var domStyle = stylesInDom[item.id];
 		if(domStyle) {
-			domStyle.refs++;
 			for(var j = 0; j < domStyle.parts.length; j++) {
-				domStyle.parts[j](item.parts[j]);
+				var loader = domStyle.parts[j].find(function(loader) {
+					return loader.doc === doc;
+				});
+				if (loader) {
+					loader.refs++;
+					loader.update(item.parts[j]);
+				} else {
+					domStyle.parts[j].push(addStyle(item.parts[j], options));
+				}
 			}
 			for(; j < item.parts.length; j++) {
-				domStyle.parts.push(addStyle(item.parts[j], options));
+				domStyle.parts[j] = [addStyle(item.parts[j], options)];
 			}
 		} else {
-			var parts = [];
+			var parts = new Array(item.parts.length);
 			for(var j = 0; j < item.parts.length; j++) {
-				parts.push(addStyle(item.parts[j], options));
+				parts[j] = [addStyle(item.parts[j], options)];
 			}
-			stylesInDom[item.id] = {id: item.id, refs: 1, parts: parts};
+			stylesInDom[item.id] = {id: item.id, parts: parts};
 		}
 	}
 }
@@ -100,7 +129,7 @@ function listToStyles(list) {
 }
 
 function insertStyleElement(options, styleElement) {
-	var head = getHeadElement();
+	var head = getHeadElement(options.doc);
 	var lastStyleElementInsertedAtTop = styleElementsInsertedAtTop[styleElementsInsertedAtTop.length - 1];
 	if (options.insertAt === "top") {
 		if(!lastStyleElementInsertedAtTop) {
@@ -127,14 +156,14 @@ function removeStyleElement(styleElement) {
 }
 
 function createStyleElement(options) {
-	var styleElement = document.createElement("style");
+	var styleElement = options.doc.createElement("style");
 	styleElement.type = "text/css";
 	insertStyleElement(options, styleElement);
 	return styleElement;
 }
 
 function createLinkElement(options) {
-	var linkElement = document.createElement("link");
+	var linkElement = options.doc.createElement("link");
 	linkElement.rel = "stylesheet";
 	insertStyleElement(options, linkElement);
 	return linkElement;
@@ -146,8 +175,8 @@ function addStyle(obj, options) {
 	if (options.singleton) {
 		var styleIndex = singletonCounter++;
 		styleElement = singletonElement || (singletonElement = createStyleElement(options));
-		update = applyToSingletonTag.bind(null, styleElement, styleIndex, false);
-		remove = applyToSingletonTag.bind(null, styleElement, styleIndex, true);
+		update = applyToSingletonTag.bind(null, styleElement, styleIndex, false, obj, options.doc);
+		remove = applyToSingletonTag.bind(null, styleElement, styleIndex, true, obj, options.doc);
 	} else if(obj.sourceMap &&
 		typeof URL === "function" &&
 		typeof URL.createObjectURL === "function" &&
@@ -155,7 +184,7 @@ function addStyle(obj, options) {
 		typeof Blob === "function" &&
 		typeof btoa === "function") {
 		styleElement = createLinkElement(options);
-		update = updateLink.bind(null, styleElement);
+		update = updateLink.bind(null, styleElement, obj, options.doc);
 		remove = function() {
 			removeStyleElement(styleElement);
 			if(styleElement.href)
@@ -163,7 +192,7 @@ function addStyle(obj, options) {
 		};
 	} else {
 		styleElement = createStyleElement(options);
-		update = applyToTag.bind(null, styleElement);
+		update = applyToTag.bind(null, styleElement, obj, options.doc);
 		remove = function() {
 			removeStyleElement(styleElement);
 		};
@@ -171,14 +200,18 @@ function addStyle(obj, options) {
 
 	update(obj);
 
-	return function updateStyle(newObj) {
-		if(newObj) {
-			if(newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap)
-				return;
-			update(obj = newObj);
-		} else {
-			remove();
-		}
+	return {
+		update: function updateStyle(newObj) {
+			if(newObj) {
+				if(newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap)
+					return;
+				update(obj = newObj);
+			} else {
+				remove();
+			}
+		},
+		refs: 1,
+		doc: options.doc
 	};
 }
 
@@ -191,13 +224,13 @@ var replaceText = (function () {
 	};
 })();
 
-function applyToSingletonTag(styleElement, index, remove, obj) {
+function applyToSingletonTag(styleElement, index, remove, obj, doc) {
 	var css = remove ? "" : obj.css;
 
 	if (styleElement.styleSheet) {
 		styleElement.styleSheet.cssText = replaceText(index, css);
 	} else {
-		var cssNode = document.createTextNode(css);
+		var cssNode = doc.createTextNode(css);
 		var childNodes = styleElement.childNodes;
 		if (childNodes[index]) styleElement.removeChild(childNodes[index]);
 		if (childNodes.length) {
@@ -208,7 +241,7 @@ function applyToSingletonTag(styleElement, index, remove, obj) {
 	}
 }
 
-function applyToTag(styleElement, obj) {
+function applyToTag(styleElement, obj, doc) {
 	var css = obj.css;
 	var media = obj.media;
 
@@ -222,11 +255,11 @@ function applyToTag(styleElement, obj) {
 		while(styleElement.firstChild) {
 			styleElement.removeChild(styleElement.firstChild);
 		}
-		styleElement.appendChild(document.createTextNode(css));
+		styleElement.appendChild(doc.createTextNode(css));
 	}
 }
 
-function updateLink(linkElement, obj) {
+function updateLink(linkElement, obj, doc) {
 	var css = obj.css;
 	var sourceMap = obj.sourceMap;
 
