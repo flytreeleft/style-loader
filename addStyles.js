@@ -175,8 +175,8 @@ function addStyle(obj, options) {
 	if (options.singleton) {
 		var styleIndex = singletonCounter++;
 		styleElement = singletonElement || (singletonElement = createStyleElement(options));
-		update = applyToSingletonTag.bind(null, styleElement, styleIndex, false, obj, options.doc);
-		remove = applyToSingletonTag.bind(null, styleElement, styleIndex, true, obj, options.doc);
+		update = applyToSingletonTag.bind(null, styleElement, styleIndex, false);
+		remove = applyToSingletonTag.bind(null, styleElement, styleIndex, true);
 	} else if(obj.sourceMap &&
 		typeof URL === "function" &&
 		typeof URL.createObjectURL === "function" &&
@@ -184,7 +184,7 @@ function addStyle(obj, options) {
 		typeof Blob === "function" &&
 		typeof btoa === "function") {
 		styleElement = createLinkElement(options);
-		update = updateLink.bind(null, styleElement, obj, options.doc);
+		update = updateLink.bind(null, styleElement);
 		remove = function() {
 			removeStyleElement(styleElement);
 			if(styleElement.href)
@@ -192,26 +192,27 @@ function addStyle(obj, options) {
 		};
 	} else {
 		styleElement = createStyleElement(options);
-		update = applyToTag.bind(null, styleElement, obj, options.doc);
+		update = applyToTag.bind(null, styleElement);
 		remove = function() {
 			removeStyleElement(styleElement);
 		};
 	}
 
-	update(obj);
+	var doc = options.doc;
+	update(obj, doc);
 
 	return {
 		update: function updateStyle(newObj) {
 			if(newObj) {
 				if(newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap)
 					return;
-				update(obj = newObj);
+				update(obj = newObj, doc);
 			} else {
 				remove();
 			}
 		},
 		refs: 1,
-		doc: options.doc
+		doc: doc
 	};
 }
 
