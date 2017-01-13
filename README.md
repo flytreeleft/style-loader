@@ -7,9 +7,9 @@ Adds CSS to the DOM by injecting a `<style>` tag
 ### Lazy style loading
 
 ```
-var loader = require('style-loader?loadable=true!css-loader!./file.css');
+var styles = require('style-loader?loadable=true!css-loader!./file.css');
 // Loading style when calling load
-var unload = loader.load({singleton: true, insertAt: 'top'});
+var unload = styles.load({singleton: true, insertAt: 'top'});
 // Unload style. The style will be removed just when the number of references is zeor
 unload();
 ```
@@ -17,9 +17,9 @@ unload();
 ### Load style to iframe
 
 ```
-var loader = require('style-loader?loadable=true!css-loader!./file.css');
+var styles = require('style-loader?loadable=true!css-loader!./file.css');
 // Load style to the head of iframe
-var unload = loader.load({owner: iframeDocument});
+var unload = styles.load({doc: iframeDocument});
 ```
 
 ## Install
