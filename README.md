@@ -2,6 +2,26 @@
 
 Adds CSS to the DOM by injecting a `<style>` tag
 
+## Unofficial feature
+
+### Lazy style loading
+
+```
+var loader = require('style-loader?loadable=true!css-loader!./file.css');
+// Loading style when calling load
+var unload = loader.load({singleton: true, insertAt: 'top'});
+// Unload style. The style will be removed just when the number of references is zeor
+unload();
+```
+
+### Load style to iframe
+
+```
+var loader = require('style-loader?loadable=true!css-loader!./file.css');
+// Load style to the head of iframe
+var unload = loader.load({owner: iframeDocument});
+```
+
 ## Install
 
 ```
@@ -39,7 +59,7 @@ var style = require("style-loader!css-loader!./file.css");
 style.placeholder1 === "z849f98ca812bc0d099a43e0f90184"
 ```
 
-### Reference-counted API
+<!--### Reference-counted API
 
 ``` javascript
 var style = require("style-loader/useable!css-loader!./file.css");
@@ -49,7 +69,7 @@ style.unuse(); // = style.unref();
 
 Styles are not added on `require`, but instead on call to `use`/`ref`. Styles are removed from page if `unuse`/`unref` is called exactly as often as `use`/`ref`.
 
-Note: Behavior is undefined when `unuse`/`unref` is called more often than `use`/`ref`. Don't do that.
+Note: Behavior is undefined when `unuse`/`unref` is called more often than `use`/`ref`. Don't do that.-->
 
 ### Options
 
