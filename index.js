@@ -23,7 +23,7 @@ module.exports.pitch = function(remainingRequest) {
 		"function registerUpdate(update) {",
 		"    if(module.hot) {",
 		"    	// When the styles change, update the <style> tags",
-		"    	if(!content.locals && updaters.length === 0) {",
+		"    	if(!content.locals && updateHandles.length === 0) {",
 		"    		module.hot.accept(" + loaderUtils.stringifyRequest(this, "!!" + remainingRequest) + ", function() {",
 		"    			var newContent = require(" + loaderUtils.stringifyRequest(this, "!!" + remainingRequest) + ");",
 		"    			if(typeof newContent === 'string') newContent = [[module.id, newContent, '']];",
